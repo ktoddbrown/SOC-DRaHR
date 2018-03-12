@@ -1,0 +1,35 @@
+---
+title: "Staging for local datasets"
+author: "K Todd-Brown (ktoddbrown@gmail.com)"
+date: "3/12/2018"
+output: html_document
+---
+These datasets do not have a download option on them yet either because they are not published or are otherwise locally processed.
+
+```{r setup}
+library(tidyverse)
+library(assertthat)
+library(SoilDataR) #library(devtools); install_github("ISCN/soilDataR")
+
+#mapping librarys to help with global/regional plots
+library(ggmap)
+library(maps)
+library(mapdata)
+library(fiftystater)
+
+#install.packages("EML", repos = c("http://packages.ropensci.org", "https://cran.rstudio.com"))
+library(EML)
+```
+
+# NEON
+NEON contact provided a number of packaged zip files for example scripting.
+```{r}
+dataDir <- '~/Documents/Datasets/NEON_biogeochem/NEON_chem-soil-megapit/'
+
+##big file here, not sure it's completely useful yet
+#metaData <- read_eml(file.path(dataDir, "NEON.D01.BART.DP1.00097.001.2013-08.basic.20170707T141837Z", "NEON.D01.BART.DP1.00097.001.20130819-20130819.xml"))
+csvFiles <- list.files(dataDir, pattern='*csv$', full.names=TRUE, recursive=TRUE)
+#grepl('variables', csvFiles) #file with header key
+# 
+dataLoad <- read_csv(csvFiles[grepl('variables', csvFiles)])
+```
