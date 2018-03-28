@@ -63,7 +63,7 @@ ggplot(NEONdata$wide) +
         axis.title=element_blank())
 ```
 
-```{r plotValues, fig.height=10}
+```{r plotValues}
 print(unique(NEONdata$long$unit))
 
 ggplot(NEONdata$long %>% filter(grepl('mol kg-1', unit))) +
