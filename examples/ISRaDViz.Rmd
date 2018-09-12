@@ -1,0 +1,51 @@
+---
+title: "ISRaD data Vis"
+author: "K Todd-Brown (ktoddbrown@gmail.com)"
+date: "9/12/2018"
+output: pdf_document
+---
+
+```{r setUp}
+library(tidyverse)
+library(readxl)
+library(SoilDataR)
+```
+
+```{r}
+#download.file(url='https://github.com/International-Soil-Radiocarbon-Database/ISRaD/blob/master/Data/database/ISRaD_flat.csv', destfile = '~/Documents/Datasets/ISRaD/ISRaD_flat.csv')
+
+
+
+flatDataDump <- read.csv('~/Documents/GitHubRepo/ISRaD/Data/database/ISRaD_flat.csv') 
+
+print("Check the unlabled columns")
+print(summary(flatDataDump %>% select(starts_with('X'))))
+
+flatDataDump <- flatDataDump %>%
+    select(-starts_with('X'), -SITE, -PROFILE, -FLUX, -LAYER, -INTERSTITIAL, -INCUBATION, -FRACTION)
+```
+
+```{r}
+templetMetaFile <- ('~/Documents/Datasets/ISRaD/ISRaD_Template_Info.xlsx')
+
+print(excel_sheets(templetMetaFile))
+
+flatTemplet<- read_excel(templetMetaFile, 
+                          sheet = excel_sheets(templetMetaFile)[2]) %>%
+  mutate(sheet=excel_sheets(templetMetaFile)[2])
+
+for(sheetName in excel_sheets(templetMetaFile)[-(1:2)]){
+  #print(sheetName)
+  #print(read_excel(templetMetaFile, sheet=sheetName, col_names=FALSE, n_max=1))
+  flatTemplet <- flatTemplet %>% 
+    bind_rows(
+      read_excel(templetMetaFile, sheet=sheetName, col_types = 'text') %>%
+  mutate(sheet=sheetName))
+}
+
+setdiff( names(flatDataDump), unique(flatTemplet$Column_Name))
+setdiff(unique(flatTemplet$Column_Name),  names(flatDataDump))
+
+names(flatTemplet) <- paste('ISRaD', names(flatTemplet), sep='_')
+write.csv(flatTemplet, file = '../dataset_keys/ISRaD_draft.csv', row.names = FALSE)
+```
