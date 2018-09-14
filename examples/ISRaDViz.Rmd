@@ -9,23 +9,89 @@ output: pdf_document
 library(tidyverse)
 library(readxl)
 library(SoilDataR)
+
+library(devtools)
+install_github('International-Soil-Radiocarbon-Database/ISRaD')
+library(ISRaD)
+
+#mapping librarys to help with global/regional plots
+library(ggmap)
+library(maps)
+library(mapdata)
+library(fiftystater)
+
 ```
 
-```{r}
-#download.file(url='https://github.com/International-Soil-Radiocarbon-Database/ISRaD/blob/master/Data/database/ISRaD_flat.csv', destfile = '~/Documents/Datasets/ISRaD/ISRaD_flat.csv')
+```{r plotSites}
+sitesLatLon <- ISRaD_data$site %>%
+  select(site_lat, site_long) %>%
+  mutate_all(as.numeric)
 
+ggplot(sitesLatLon) +
+  borders("world", colour="gray80", fill="gray80") + 
+  geom_point(aes(x=site_long, y=site_lat)) + 
+  theme_bw() +
+  theme(text=element_text(size=18), 
+        axis.title.x = element_blank(), axis.title.y=element_blank()) +
+  labs(title=paste(length(ISRaD_data$metadata$entry_name), 'entries in ISRaD'))
 
-
-flatDataDump <- read.csv('~/Documents/GitHubRepo/ISRaD/Data/database/ISRaD_flat.csv') 
-
-print("Check the unlabled columns")
-print(summary(flatDataDump %>% select(starts_with('X'))))
-
-flatDataDump <- flatDataDump %>%
-    select(-starts_with('X'), -SITE, -PROFILE, -FLUX, -LAYER, -INTERSTITIAL, -INCUBATION, -FRACTION)
 ```
 
-```{r}
+```{r plotBulk}
+ageOC <- ISRaD_data$layer %>% 
+  filter(is.finite(lyr_13c), is.finite(lyr_c_org)) %>%
+  select(ends_with('name'), lyr_c_org, lyr_13c)
+
+ggplot(ageOC) +
+  geom_point(aes(x=lyr_13c, y=lyr_c_org))
+
+ggplot(ISRaD_data$layer) +
+  geom_point(aes(x=lyr_bd_tot, y=lyr_c_org))
+
+ggplot(ISRaD_data$layer) +
+  geom_point(aes(x=lyr_bd_samp, y=lyr_c_org))
+```
+
+```{r bottomProfile}
+bottoms <- ISRaD_data$layer %>% 
+  group_by(entry_name, site_name, pro_name) %>%
+  filter(lyr_bot == max(lyr_bot))
+
+ggplot(bottoms) +
+  geom_histogram(aes(x=lyr_bot))
+
+ggplot(bottoms) +
+  geom_histogram(aes(x=lyr_bot)) +
+  scale_x_log10()
+```
+
+```{r collectionDATE}
+summary(ISRaD_data$layer$lyr_obs_date_y)
+
+ggplot(ISRaD_data$layer) +
+  geom_histogram(aes(x=lyr_obs_date_y))
+```
+
+```{r MAPfilter}
+#radiocarbon vs year sampled colored by depth
+#across precip 0, 500, 1000,
+
+precipbin <- ISRaD_data$profile %>%
+  select(ends_with('name'), pro_MAP) %>%
+  #group_by(ends_with('name')) %>%
+  mutate(precipType = as.factor(if_else(pro_MAP < 500, 'dry', 
+                              if_else(pro_MAP < 1000, 'moderate',
+                                      if_else(pro_MAP > 1000, 'wet',
+                                              as.character(NA))))))
+plotMe <- ISRaD_data$layer %>%
+    filter(lyr_top == 0, lyr_bot <= 10) %>%
+  select(ends_with('name'), lyr_14c, lyr_obs_date_y) %>%
+  left_join(precipbin)
+
+ggplot(plotMe) +
+  geom_point(aes(x=lyr_obs_date_y, y=lyr_14c, color=precipType), alpha=0.5)
+```
+```{r flattenTemplet}
 templetMetaFile <- ('~/Documents/Datasets/ISRaD/ISRaD_Template_Info.xlsx')
 
 print(excel_sheets(templetMetaFile))
@@ -42,10 +108,48 @@ for(sheetName in excel_sheets(templetMetaFile)[-(1:2)]){
       read_excel(templetMetaFile, sheet=sheetName, col_types = 'text') %>%
   mutate(sheet=sheetName))
 }
-
-setdiff( names(flatDataDump), unique(flatTemplet$Column_Name))
-setdiff(unique(flatTemplet$Column_Name),  names(flatDataDump))
-
-names(flatTemplet) <- paste('ISRaD', names(flatTemplet), sep='_')
-write.csv(flatTemplet, file = '../dataset_keys/ISRaD_draft.csv', row.names = FALSE)
 ```
+
+```{r makeCleanTemplet}
+#head(flatTemplet)
+temp <- flatTemplet %>% 
+  select(Column_Name, Variable_class, Vocab, Description) %>%
+  unique() %>%
+  mutate(recordType = as.factor(if_else(grepl('^((site)|(plot))', Column_Name), 'site', 
+                  if_else(grepl('^pro', Column_Name), 'profile',
+                      if_else(grepl('^flx', Column_Name), 'flux',
+                          if_else(grepl('^ist', Column_Name), 'interstitial',
+                             if_else(grepl('^frc', Column_Name), 'fraction',
+                                if_else(grepl('^lyr', Column_Name), 'layer', 
+                                  if_else(grepl('^inc', Column_Name), 'incubation', 
+                                         'study')))))))),
+         identifier=grepl('_name$', Column_Name),
+         stripName = gsub('^((site)|(pro)|(flx)|(ist)|(frc)|(lyr)|(inc))_', '', Column_Name),
+         Variable_class = if_else(!is.na(Vocab), 'factor', Variable_class))
+
+temp$recordType %>% table
+
+numericColumns <- flatTemplet$Column_Name[!is.na(flatTemplet$Variable_class) &
+                                            flatTemplet$Variable_class == 'numeric'] %>%
+  unique()
+
+identifierColumns <- flatTemplet$Column_Name[grepl('_name$', flatTemplet$Column_Name)] %>%
+  unique()
+
+longData <- ISRaD_data$metadata %>%
+  group_by_at(intersect(identifierColumns, names(.))) 
+
+```
+
+```{r}
+#download.file(url='https://github.com/International-Soil-Radiocarbon-Database/ISRaD/blob/master/Data/database/ISRaD_flat.csv', destfile = '~/Documents/Datasets/ISRaD/ISRaD_flat.csv')
+
+flatDataDump <- read.csv('~/Documents/GitHubRepo/ISRaD/Data/database/ISRaD_flat.csv') 
+
+print("Check the unlabled columns")
+print(summary(flatDataDump %>% select(starts_with('X'))))
+
+flatDataDump <- flatDataDump %>%
+    select(-starts_with('X'), -SITE, -PROFILE, -FLUX, -LAYER, -INTERSTITIAL, -INCUBATION, -FRACTION)
+```
+
