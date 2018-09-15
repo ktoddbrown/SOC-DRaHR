@@ -23,9 +23,10 @@ library(fiftystater)
 ```
 
 ```{r plotSites}
+
 sitesLatLon <- ISRaD_data$site %>%
-  select(site_lat, site_long) %>%
-  mutate_all(as.numeric)
+  se?lect(site_lat, site_long) %>% #pull the latitude and logitidue out
+  mutate_all(as.numeric) #force everything to be numbers
 
 ggplot(sitesLatLon) +
   borders("world", colour="gray80", fill="gray80") + 
@@ -91,6 +92,53 @@ plotMe <- ISRaD_data$layer %>%
 ggplot(plotMe) +
   geom_point(aes(x=lyr_obs_date_y, y=lyr_14c, color=precipType), alpha=0.5)
 ```
+
+```{r bulk_inc_13c}
+##13c of bulk vs 13c of corrisponding incubation
+
+bulkData <- ISRaD_data$layer %>% #look at the layer data
+  #dplyr::group_by_at(vars(ends_with('name'))) %>% #set the id columns
+  dplyr::select(ends_with('name'), lyr_13c) %>% #reduce the size
+  dplyr::filter(!is.na(lyr_13c))
+
+profileAvg <- bulkData %>% 
+  dplyr::group_by(entry_name, site_name, pro_name) %>%
+  dplyr::summarize(sampleSize=n(),
+                profile_13c=mean(lyr_13c),
+                profile_13c_sd=sd(lyr_13c))
+
+incubationData <-  as.tibble(ISRaD_data$incubation) %>%
+  #dplyr::group_by_at(vars(ends_with('name'))) %>%
+  #dplyr::select(ends_with('name'), inc_13c) %>% #reduce size
+  dplyr::filter(!is.na(inc_13c))
+
+bigData <- bulkData %>%
+  inner_join(incubationData)
+
+biggerData <- ISRaD_data$layer %>%
+  full_join(ISRaD_data$incubation)
+
+ggplot(profileAvg) + geom_point(aes(y=profile_13c_sd, x=sampleSize))
+ ggplot(biggerData) + geom_point(aes(x=lyr_13c, y=inc_13c))
+```
+
+```{r findReps}
+layersWithRep <- ISRaD_data$layer %>%
+  group_by(entry_name, site_name, pro_name, lyr_top, lyr_bot) %>%
+  dplyr::tally() %>%
+  dplyr::filter(n>1)
+
+avgIncubations <- ISRaD_data$incubation %>%
+  dplyr::inner_join(layersWithRep) %>%
+  group_by(entry_name, site_name, pro_name, lyr_top, lyr_bot, n) %>%
+  dplyr::summarise(avg_13c = mean(inc_13c, na.rm=TRUE),
+                   sd_13c  = sd(inc_13c, na.rm=TRUE),
+                   finiteCount = sum(is.finite(inc_13c)))
+
+ggplot(avgIncubations, aes(y=avg_13c, x=(finiteCount))) +
+  geom_point() +
+  geom_errorbar(aes(ymin=avg_13c-sd_13c, ymax=avg_13c+sd_13c))
+```
 ```{r flattenTemplet}
 templetMetaFile <- ('~/Documents/Datasets/ISRaD/ISRaD_Template_Info.xlsx')
 
@@ -137,7 +185,14 @@ identifierColumns <- flatTemplet$Column_Name[grepl('_name$', flatTemplet$Column_
   unique()
 
 longData <- ISRaD_data$metadata %>%
-  group_by_at(intersect(identifierColumns, names(.))) 
+  group_by_at(intersect(identifierColumns, names(.))) %>%
+  mutate(modification_date_decimal_year = lubridate::decimal_date( as.Date(  paste(modification_date_y, modification_date_m, modification_date_d, sep='-')))) %>%
+  select(-modification_date_y, modification_date_m, modification_date_d) %>%
+  gather(key='Column_name', value='string_value', -ends_with('_name'), -modification_date_decimal_year) %>%
+  gather(key='Column_name', value='numeric_value', modification_date_decimal_year) #broken, may need to break this into two dataframes
+
+%>%
+  full_join(ISRaD_data$site) 
 
 ```
 
